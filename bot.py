@@ -7,13 +7,13 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties  # НОВОЕ: для aiogram 3.7.0+
+from aiogram.client.default import DefaultBotProperties
 
 print("=== Начало запуска бота ===")
 
 # ------------------- Настройки -------------------
-TOKEN = os.getenv("TELEGRAM_TOKEN")  # твой токен
-OWNER_ID = 5534388849                # твой Telegram ID
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+OWNER_ID = 5534388849
 DB_PATH = "bot_data.db"
 
 print(f"TOKEN exists: {bool(TOKEN)}")
@@ -29,9 +29,7 @@ user_last_action = {}
 user_pending_issue = {}
 
 # ------------------- Машины -------------------
-machines = {
-    "GRUSHA": "ГРУША",
-}
+machines = {"GRUSHA": "ГРУША"}
 
 # ------------------- Кнопки -------------------
 print("Создание клавиатур...")
@@ -96,12 +94,19 @@ def save_record(user_id, machine_id, type_, value):
 
 # ------------------- Хэндлеры -------------------
 async def start_handler(message: types.Message):
+    # ДОБАВЛЕНА ОТЛАДКА
+    print(f"=== ПОЛУЧЕНА КОМАНДА /start ОТ {message.from_user.id} ===")
+    print(f"Текст сообщения: '{message.text}'")
+    
     try:
         args = message.text.split()
         machine_code = args[1] if len(args) > 1 else "unknown"
         machine_name = machines.get(machine_code, machine_code)
         user_machine[message.from_user.id] = machine_code
+        
+        print(f"Отправляю ответ пользователю {message.from_user.id}")
         await message.answer(f"Привет! Вы подключились к машине {machine_name}", reply_markup=menu_kb)
+        print("Ответ отправлен успешно")
     except Exception as e:
         print(f"ERROR в start_handler: {e}")
 
@@ -178,10 +183,9 @@ async def message_handler(message: types.Message, bot: Bot):
 # ------------------- Bot и Dispatcher -------------------
 print("Инициализация бота и диспетчера...")
 try:
-    # ИСПРАВЛЕНО: новый синтаксис для aiogram 3.7.0+
     bot = Bot(
         token=TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)  # Вместо parse_mode в конструкторе
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
     
@@ -213,8 +217,17 @@ def webhook():
 def health_check():
     return {"status": "ok", "bot": "running"}, 200
 
-# ------------------- Main -------------------
+# ------------------- Main (ИСПРАВЛЕНО: единый блок) -------------------
+async def on_startup():
+    """Установка вебхука при запуске"""
+    webhook_url = "https://coffee-telegram-bot-1-tf7w.onrender.com/"
+    await bot.set_webhook(webhook_url)
+    print(f"Вебхук установлен на: {webhook_url}")
+
 if __name__ == "__main__":
+    # Устанавливаем вебхук при запуске
+    asyncio.run(on_startup())
+    
     print("=== Запуск Flask приложения ===")
     
     # Инициализируем базу данных
