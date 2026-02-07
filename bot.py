@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties  # НОВОЕ: для aiogram 3.7.0+
 
 print("=== Начало запуска бота ===")
 
@@ -177,7 +178,11 @@ async def message_handler(message: types.Message, bot: Bot):
 # ------------------- Bot и Dispatcher -------------------
 print("Инициализация бота и диспетчера...")
 try:
-    bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
+    # ИСПРАВЛЕНО: новый синтаксис для aiogram 3.7.0+
+    bot = Bot(
+        token=TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)  # Вместо parse_mode в конструкторе
+    )
     dp = Dispatcher()
     
     dp.message.register(start_handler, Command("start"))
