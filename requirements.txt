@@ -1,8 +1,8 @@
 --only-binary :all:
-aiohttp>=3.13.3
+aiohttp>=3.8.5,<3.9.0
 aiogram==3.0.0
 Flask==2.3.3
-pydantic>=2.8.0
+pydantic==2.12.5
 pydantic-core>=2.20.0
 python-dotenv==1.0.0
 requests==2.31.0
