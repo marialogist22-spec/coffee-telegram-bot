@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 # ------------------- Настройки -------------------
 import os
 
-TOKEN = os.getenv("8373420563:AAGH-JZnC_yvIJUocwf0oaT-ywMhoHovB_E")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 OWNER_ID = 5534388849 # твой числовой Telegram ID
 
 # ------------------- Память бота -------------------
@@ -135,3 +135,25 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+from flask import Flask, request
+from aiogram import Bot, Dispatcher, types
+import os
+import asyncio
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+bot = Bot(token=TOKEN)
+dp = Dispatcher(bot)
+app = Flask(__name__)
+
+@app.route("/", methods=["POST"])
+def webhook():
+    update = types.Update(**request.get_json())
+    asyncio.run(dp.process_update(update))
+    return "ok"
+
+@app.route("/")
+def home():
+    return "Bot is alive!"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
