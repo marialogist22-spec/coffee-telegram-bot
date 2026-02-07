@@ -123,7 +123,6 @@ async def callback_handler(callback: types.CallbackQuery):
         else:
             save_record(user_id, machine_code, "issue", issue_type)
             await callback.message.answer(f"Спасибо! Проблема '{issue_type}' сохранена ✅", reply_markup=menu_kb)
-            # Отправляем уведомление владельцу
             await bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{issue_type}")
 
     await callback.answer()
@@ -141,7 +140,6 @@ async def message_handler(message: types.Message):
         elif type_ == "issue" and user_id in user_pending_issue:
             save_record(user_id, machine_code, "issue", message.text)
             await message.answer("Спасибо! Проблема сохранена ✅", reply_markup=menu_kb)
-            # Отправляем уведомление владельцу
             await bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{message.text}")
             user_pending_issue.pop(user_id, None)
 
@@ -181,4 +179,4 @@ if __name__ == "__main__":
     
     # Запускаем Flask
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
