@@ -1,24 +1,24 @@
 import asyncio
 import csv
+import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from flask import Flask, request
+import threading
 
 # ------------------- Настройки -------------------
-import os
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-OWNER_ID = 5534388849 # твой числовой Telegram ID
+OWNER_ID = 5534388849  # твой числовой Telegram ID
 
 # ------------------- Память бота -------------------
-user_machine = {}         # какая машина у пользователя
-user_last_action = {}     # для отзывов/оценок/тех. проблем
-user_pending_issue = {}   # для "другая проблема"
+user_machine = {}        
+user_last_action = {}   
+user_pending_issue = {} 
 
 # ------------------- Машины -------------------
 machines = {
     "GRUSHA": "ГРУША",
-    # добавляй новые машины, например "BT002": "КОРЗИНКА"
 }
 
 # ------------------- Кнопки -------------------
@@ -61,7 +61,6 @@ async def callback_handler(callback: types.CallbackQuery):
     machine_name = machines.get(machine_code, machine_code)
     data = callback.data
 
-    # Меню
     if data == "rate_coffee":
         await callback.message.answer(f"Оцените кофе на машине {machine_name} (1–5):", reply_markup=rating_kb("coffee"))
         user_last_action[user_id] = ("coffee", machine_code)
@@ -75,7 +74,6 @@ async def callback_handler(callback: types.CallbackQuery):
         await callback.message.answer(f"Выберите проблему для машины {machine_name}:", reply_markup=issue_kb)
         user_last_action[user_id] = ("issue", machine_code)
 
-    # Оценки через кнопки 1–5
     elif data.startswith("coffee_") or data.startswith("service_"):
         type_ = data.split("_")[0]
         value = data.split("_")[1]
@@ -83,7 +81,6 @@ async def callback_handler(callback: types.CallbackQuery):
         await callback.message.answer(f"Спасибо! Ваш рейтинг {type_} = {value} ✅", reply_markup=menu_kb)
         user_last_action.pop(user_id, None)
 
-    # Технические проблемы
     elif data.startswith("issue_"):
         issue_type = {
             "issue_water": "Закончилось вода",
@@ -101,11 +98,10 @@ async def callback_handler(callback: types.CallbackQuery):
             await callback.message.answer(f"Спасибо! Проблема '{issue_type}' сохранена ✅", reply_markup=menu_kb)
             await callback.bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{issue_type}")
 
-    await callback.answer()  # убираем "часики" на кнопке
+    await callback.answer()
 
 async def message_handler(message: types.Message):
     user_id = message.from_user.id
-
     if user_id in user_last_action:
         type_, machine_code = user_last_action[user_id]
         machine_name = machines.get(machine_code, machine_code)
@@ -123,10 +119,21 @@ async def message_handler(message: types.Message):
     else:
         await message.answer("Нажмите кнопку меню, чтобы выбрать действие.")
 
+# ------------------- Flask для KeepAlive -------------------
+app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Bot is alive!"
+
+def start_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 # ------------------- Запуск -------------------
 async def main():
     bot = Bot(token=TOKEN)
-    dp = Dispatcher()
+    dp = Dispatcher(bot)
     dp.message.register(start_handler, CommandStart())
     dp.callback_query.register(callback_handler)
     dp.message.register(message_handler)
@@ -134,26 +141,8 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    # Запуск Flask в отдельном потоке
+    import threading
+    threading.Thread(target=start_flask).start()
+    # Запуск бота
     asyncio.run(main())
-from flask import Flask, request
-from aiogram import Bot, Dispatcher, types
-import os
-import asyncio
-
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
-app = Flask(__name__)
-
-@app.route("/", methods=["POST"])
-def webhook():
-    update = types.Update(**request.get_json())
-    asyncio.run(dp.process_update(update))
-    return "ok"
-
-@app.route("/")
-def home():
-    return "Bot is alive!"
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
