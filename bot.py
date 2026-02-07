@@ -1,20 +1,21 @@
-import asyncio
-import csv
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+import asyncio
+import sqlite3
 from flask import Flask, request
-import threading
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.enums import ParseMode
 
 # ------------------- Настройки -------------------
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-OWNER_ID = 5534388849  # твой числовой Telegram ID
+TOKEN = os.getenv("TELEGRAM_TOKEN")  # твой токен
+OWNER_ID = 5534388849                # твой Telegram ID
+DB_PATH = "bot_data.db"
 
 # ------------------- Память бота -------------------
-user_machine = {}        
-user_last_action = {}   
-user_pending_issue = {} 
+user_machine = {}
+user_last_action = {}
+user_pending_issue = {}
 
 # ------------------- Машины -------------------
 machines = {
@@ -23,34 +24,61 @@ machines = {
 
 # ------------------- Кнопки -------------------
 menu_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="☕ Оценить кофе", callback_data="rate_coffee")],
-    [InlineKeyboardButton(text="⭐ Оценить сервис", callback_data="rate_service")],
-    [InlineKeyboardButton(text="✍️ Оставить отзыв", callback_data="leave_review")],
-    [InlineKeyboardButton(text="🛠 Техническая проблема", callback_data="tech_issue")]
+    [InlineKeyboardButton("☕ Оценить кофе", callback_data="rate_coffee")],
+    [InlineKeyboardButton("⭐ Оценить сервис", callback_data="rate_service")],
+    [InlineKeyboardButton("✍️ Оставить отзыв", callback_data="leave_review")],
+    [InlineKeyboardButton("🛠 Техническая проблема", callback_data="tech_issue")]
 ])
 
 def rating_kb(prefix):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=str(i), callback_data=f"{prefix}_{i}") for i in range(1, 6)]
+        [InlineKeyboardButton(str(i), callback_data=f"{prefix}_{i}") for i in range(1, 6)]
     ])
 
 issue_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Закончилось вода", callback_data="issue_water")],
-    [InlineKeyboardButton(text="Не отдал сдачу", callback_data="issue_change")],
-    [InlineKeyboardButton(text="Не приготовил кофе", callback_data="issue_no_coffee")],
-    [InlineKeyboardButton(text="Емкость с отходами переполнена", callback_data="issue_trash")],
-    [InlineKeyboardButton(text="Другая проблема", callback_data="issue_other")]
+    [InlineKeyboardButton("Закончилось вода", callback_data="issue_water")],
+    [InlineKeyboardButton("Не отдал сдачу", callback_data="issue_change")],
+    [InlineKeyboardButton("Не приготовил кофе", callback_data="issue_no_coffee")],
+    [InlineKeyboardButton("Емкость с отходами переполнена", callback_data="issue_trash")],
+    [InlineKeyboardButton("Другая проблема", callback_data="issue_other")]
 ])
 
-# ------------------- CSV -------------------
-def save_to_csv(user_id, machine_id, type_, value):
-    with open("data.csv", "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([user_id, machine_id, type_, value])
+# ------------------- SQLite -------------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            machine_id TEXT,
+            type TEXT,
+            value TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-# ------------------- Обработчики -------------------
-async def start_handler(message: types.Message, command: CommandStart):
-    machine_code = command.args if command.args else "unknown"
+def save_record(user_id, machine_id, type_, value):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO records (user_id, machine_id, type, value) VALUES (?, ?, ?, ?)",
+            (user_id, machine_id, type_, value)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"Ошибка при записи в DB: {e}")
+    finally:
+        conn.close()
+
+# ------------------- Хэндлеры -------------------
+async def start_handler(message: types.Message):
+    # Получаем аргумент команды /start
+    args = message.text.split()
+    machine_code = args[1] if len(args) > 1 else "unknown"
     machine_name = machines.get(machine_code, machine_code)
     user_machine[message.from_user.id] = machine_code
     await message.answer(f"Привет! Вы подключились к машине {machine_name}", reply_markup=menu_kb)
@@ -75,9 +103,8 @@ async def callback_handler(callback: types.CallbackQuery):
         user_last_action[user_id] = ("issue", machine_code)
 
     elif data.startswith("coffee_") or data.startswith("service_"):
-        type_ = data.split("_")[0]
-        value = data.split("_")[1]
-        save_to_csv(user_id, machine_code, type_, value)
+        type_, value = data.split("_")
+        save_record(user_id, machine_code, type_, value)
         await callback.message.answer(f"Спасибо! Ваш рейтинг {type_} = {value} ✅", reply_markup=menu_kb)
         user_last_action.pop(user_id, None)
 
@@ -94,55 +121,64 @@ async def callback_handler(callback: types.CallbackQuery):
             await callback.message.answer("Опишите проблему:")
             user_pending_issue[user_id] = machine_code
         else:
-            save_to_csv(user_id, machine_code, "issue", issue_type)
+            save_record(user_id, machine_code, "issue", issue_type)
             await callback.message.answer(f"Спасибо! Проблема '{issue_type}' сохранена ✅", reply_markup=menu_kb)
-            await callback.bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{issue_type}")
+            # Отправляем уведомление владельцу
+            await bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{issue_type}")
 
     await callback.answer()
 
 async def message_handler(message: types.Message):
     user_id = message.from_user.id
+
     if user_id in user_last_action:
         type_, machine_code = user_last_action[user_id]
         machine_name = machines.get(machine_code, machine_code)
 
         if type_ == "review":
-            save_to_csv(user_id, machine_code, type_, message.text)
+            save_record(user_id, machine_code, type_, message.text)
             await message.answer("Спасибо! Ваш отзыв сохранён ✅", reply_markup=menu_kb)
         elif type_ == "issue" and user_id in user_pending_issue:
-            save_to_csv(user_id, machine_code, "issue", message.text)
+            save_record(user_id, machine_code, "issue", message.text)
             await message.answer("Спасибо! Проблема сохранена ✅", reply_markup=menu_kb)
-            await message.bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{message.text}")
-            user_pending_issue.pop(user_id)
+            # Отправляем уведомление владельцу
+            await bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{message.text}")
+            user_pending_issue.pop(user_id, None)
 
         user_last_action.pop(user_id, None)
     else:
         await message.answer("Нажмите кнопку меню, чтобы выбрать действие.")
 
-# ------------------- Flask для KeepAlive -------------------
+# ------------------- Bot и Dispatcher -------------------
+bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
+dp = Dispatcher()
+
+# Регистрируем хэндлеры
+dp.message.register(start_handler, Command("start"))
+dp.callback_query.register(callback_handler)
+dp.message.register(message_handler)
+
+# ------------------- Flask и Webhook -------------------
 app = Flask(__name__)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot is alive!"
+@app.route("/", methods=["GET", "POST"])
+def webhook():
+    if request.method == "POST":
+        try:
+            update = types.Update(**request.get_json())
+            # Обрабатываем обновление
+            asyncio.run(dp.feed_webhook_update(bot, update))
+        except Exception as e:
+            print(f"Ошибка при обработке апдейта: {e}")
+        return "ok", 200
+    else:
+        return "Bot is alive!", 200
 
-def start_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# ------------------- Запуск -------------------
-async def main():
-    bot = Bot(token=TOKEN)
-    dp = Dispatcher(bot)
-    dp.message.register(start_handler, CommandStart())
-    dp.callback_query.register(callback_handler)
-    dp.message.register(message_handler)
-    print("Бот запускается…")
-    await dp.start_polling(bot)
-
+# ------------------- Main -------------------
 if __name__ == "__main__":
-    # Запуск Flask в отдельном потоке
-    import threading
-    threading.Thread(target=start_flask).start()
-    # Запуск бота
-    asyncio.run(main())
+    # Инициализируем базу данных
+    init_db()
+    
+    # Запускаем Flask
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False)
