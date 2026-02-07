@@ -5,8 +5,10 @@ from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 # ------------------- Настройки -------------------
-TOKEN = "8373420563:AAGH-JZnC_yvIJUocwf0oaT-ywMhoHovB_E"
-OWNER_ID =   # твой числовой Telegram ID
+import os
+
+TOKEN = os.getenv("8373420563:AAGH-JZnC_yvIJUocwf0oaT-ywMhoHovB_E")
+OWNER_ID = 5534388849 # твой числовой Telegram ID
 
 # ------------------- Память бота -------------------
 user_machine = {}         # какая машина у пользователя
