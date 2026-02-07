@@ -11,7 +11,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
 print("=" * 50)
-print("ВЕРСИЯ КОДА: 2026-02-07 с расширенной диагностикой")
+print("ВЕРСИЯ КОДА: 2026-02-07 с исправлением Event Loop")
 print("=" * 50)
 
 print("=== Начало запуска бота ===")
@@ -219,6 +219,10 @@ except Exception as e:
 # ------------------- Flask и Webhook -------------------
 app = Flask(__name__)
 
+# Создаем глобальный event loop для обработки асинхронных задач
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 @app.route("/", methods=["GET", "POST"])
 def webhook():
     if request.method == "POST":
@@ -245,7 +249,9 @@ def webhook():
             update = types.Update(**update_data)
             print("⏳ Начинаю обработку update...")
             
-            asyncio.run(dp.feed_webhook_update(bot, update))
+            # ВАЖНОЕ ИСПРАВЛЕНИЕ: используем существующий event loop
+            # вместо создания нового через asyncio.run()
+            loop.run_until_complete(dp.feed_webhook_update(bot, update))
             
             print("✅ Update успешно обработан")
             print("=" * 50 + "\n")
@@ -261,7 +267,7 @@ def webhook():
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok", "bot": "running", "version": "2026-02-07-diagnostic"}, 200
+    return {"status": "ok", "bot": "running", "version": "2026-02-07-eventloop-fix"}, 200
 
 # ------------------- Main -------------------
 async def on_startup():
@@ -276,7 +282,7 @@ async def on_startup():
 
 if __name__ == "__main__":
     # Устанавливаем вебхук при запуске
-    asyncio.run(on_startup())
+    loop.run_until_complete(on_startup())
     
     print("\n=== Запуск Flask приложения ===")
     
