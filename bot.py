@@ -6,12 +6,12 @@ from datetime import datetime
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
 print("=" * 50)
-print("ВЕРСИЯ КОДА: 2026-02-07 с исправлением Event Loop")
+print("ВЕРСИЯ КОДА: 2026-02-07 с командой /export")
 print("=" * 50)
 
 print("=== Начало запуска бота ===")
@@ -197,6 +197,49 @@ async def message_handler(message: types.Message, bot: Bot):
         import traceback
         traceback.print_exc()
 
+# ------------------- НОВАЯ ФУНКЦИЯ: Экспорт базы данных -------------------
+async def export_database_handler(message: types.Message):
+    """Обработчик команды /export для отправки бэкапа базы данных"""
+    print(f"\n=== ПОЛУЧЕНА КОМАНДА /export ОТ {message.from_user.id} ===")
+    
+    # Проверяем, что команду отправляет владелец бота
+    if message.from_user.id != OWNER_ID:
+        print(f"❌ Отказ в доступе: пользователь {message.from_user.id} не является владельцем")
+        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        return
+    
+    try:
+        # Проверяем существование файла базы данных
+        if not os.path.exists(DB_PATH):
+            print(f"❌ Файл базы данных не найден: {DB_PATH}")
+            await message.answer("❌ Файл базы данных не найден.")
+            return
+        
+        # Получаем размер файла
+        file_size = os.path.getsize(DB_PATH)
+        print(f"Размер файла базы данных: {file_size} байт")
+        
+        # Создаем объект файла для отправки
+        document = FSInputFile(DB_PATH)
+        
+        print(f"Отправляю файл базы данных пользователю {message.from_user.id}...")
+        
+        # Отправляем файл
+        await message.answer_document(
+            document=document,
+            caption=f"📋 Бэкап базы данных\n"
+                   f"Дата: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                   f"Размер: {file_size} байт"
+        )
+        
+        print("✅ Файл базы данных успешно отправлен!")
+        
+    except Exception as e:
+        print(f"❌ ERROR в export_database_handler: {e}")
+        import traceback
+        traceback.print_exc()
+        await message.answer(f"❌ Ошибка при отправке базы данных: {str(e)}")
+
 # ------------------- Bot и Dispatcher -------------------
 print("Инициализация бота и диспетчера...")
 try:
@@ -206,7 +249,9 @@ try:
     )
     dp = Dispatcher()
     
+    # Регистрируем все обработчики
     dp.message.register(start_handler, Command("start"))
+    dp.message.register(export_database_handler, Command("export"))  # НОВЫЙ ОБРАБОТЧИК
     dp.callback_query.register(callback_handler)
     dp.message.register(message_handler)
     
@@ -232,7 +277,6 @@ def webhook():
             print(f"Время получения: {datetime.now().strftime('%H:%M:%S')}")
             
             update_data = request.get_json()
-            print(f"Данные update: {update_data}")
             
             # Определяем тип сообщения
             if "message" in update_data:
@@ -249,8 +293,7 @@ def webhook():
             update = types.Update(**update_data)
             print("⏳ Начинаю обработку update...")
             
-            # ВАЖНОЕ ИСПРАВЛЕНИЕ: используем существующий event loop
-            # вместо создания нового через asyncio.run()
+            # Используем существующий event loop
             loop.run_until_complete(dp.feed_webhook_update(bot, update))
             
             print("✅ Update успешно обработан")
@@ -267,7 +310,7 @@ def webhook():
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok", "bot": "running", "version": "2026-02-07-eventloop-fix"}, 200
+    return {"status": "ok", "bot": "running", "version": "2026-02-07-with-export"}, 200
 
 # ------------------- Main -------------------
 async def on_startup():
@@ -298,6 +341,12 @@ if __name__ == "__main__":
     try:
         app.run(host="0.0.0.0", port=port, debug=False)
         print("Flask приложение запущено")
+        print("\n" + "=" * 50)
+        print("✅ Бот запущен и готов к работе!")
+        print(f"Доступные команды:")
+        print(f"  /start - начать работу с ботом")
+        print(f"  /export - получить бэкап базы данных (только для владельца)")
+        print("=" * 50)
     except Exception as e:
         print(f"ERROR при запуске Flask: {e}")
         sys.exit(1)
