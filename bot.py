@@ -2,12 +2,17 @@ import os
 import sys
 import asyncio
 import sqlite3
+from datetime import datetime
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+
+print("=" * 50)
+print("ВЕРСИЯ КОДА: 2026-02-07 с расширенной диагностикой")
+print("=" * 50)
 
 print("=== Начало запуска бота ===")
 
@@ -94,9 +99,11 @@ def save_record(user_id, machine_id, type_, value):
 
 # ------------------- Хэндлеры -------------------
 async def start_handler(message: types.Message):
-    # ДОБАВЛЕНА ОТЛАДКА
-    print(f"=== ПОЛУЧЕНА КОМАНДА /start ОТ {message.from_user.id} ===")
+    """Обработчик команды /start"""
+    print(f"\n=== ПОЛУЧЕНА КОМАНДА /start ОТ {message.from_user.id} ===")
     print(f"Текст сообщения: '{message.text}'")
+    print(f"User ID: {message.from_user.id}")
+    print(f"Username: @{message.from_user.username}")
     
     try:
         args = message.text.split()
@@ -104,11 +111,17 @@ async def start_handler(message: types.Message):
         machine_name = machines.get(machine_code, machine_code)
         user_machine[message.from_user.id] = machine_code
         
-        print(f"Отправляю ответ пользователю {message.from_user.id}")
+        print(f"Код машины: {machine_code}")
+        print(f"Имя машины: {machine_name}")
+        
+        print("Отправляю ответ пользователю...")
         await message.answer(f"Привет! Вы подключились к машине {machine_name}", reply_markup=menu_kb)
-        print("Ответ отправлен успешно")
+        print("✅ Ответ успешно отправлен!")
+        
     except Exception as e:
-        print(f"ERROR в start_handler: {e}")
+        print(f"❌ ERROR в start_handler: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def callback_handler(callback: types.CallbackQuery, bot: Bot):
     try:
@@ -156,6 +169,8 @@ async def callback_handler(callback: types.CallbackQuery, bot: Bot):
         await callback.answer()
     except Exception as e:
         print(f"ERROR в callback_handler: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def message_handler(message: types.Message, bot: Bot):
     try:
@@ -179,6 +194,8 @@ async def message_handler(message: types.Message, bot: Bot):
             await message.answer("Нажмите кнопку меню, чтобы выбрать действие.")
     except Exception as e:
         print(f"ERROR в message_handler: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ------------------- Bot и Dispatcher -------------------
 print("Инициализация бота и диспетчера...")
@@ -194,6 +211,7 @@ try:
     dp.message.register(message_handler)
     
     print("Бот и диспетчер инициализированы успешно")
+    print(f"Зарегистрировано обработчиков команд: {len(dp.message.handlers)}")
 except Exception as e:
     print(f"ERROR при инициализации бота/диспетчера: {e}")
     sys.exit(1)
@@ -205,30 +223,62 @@ app = Flask(__name__)
 def webhook():
     if request.method == "POST":
         try:
-            update = types.Update(**request.get_json())
+            print("\n" + "=" * 50)
+            print("📨 ПОЛУЧЕН POST-ЗАПРОС ОТ TELEGRAM")
+            print(f"Время получения: {datetime.now().strftime('%H:%M:%S')}")
+            
+            update_data = request.get_json()
+            print(f"Данные update: {update_data}")
+            
+            # Определяем тип сообщения
+            if "message" in update_data:
+                msg_text = update_data["message"].get("text", "Нет текста")
+                user_id = update_data["message"]["from"]["id"]
+                print(f"📝 Сообщение от user_id={user_id}: '{msg_text}'")
+            elif "callback_query" in update_data:
+                callback_data = update_data["callback_query"]["data"]
+                user_id = update_data["callback_query"]["from"]["id"]
+                print(f"🔄 Callback от user_id={user_id}: '{callback_data}'")
+            else:
+                print(f"❓ Неизвестный тип update: {update_data.keys()}")
+            
+            update = types.Update(**update_data)
+            print("⏳ Начинаю обработку update...")
+            
             asyncio.run(dp.feed_webhook_update(bot, update))
+            
+            print("✅ Update успешно обработан")
+            print("=" * 50 + "\n")
+            
         except Exception as e:
-            print(f"Ошибка при обработке апдейта: {e}")
+            print(f"❌ КРИТИЧЕСКАЯ ОШИБКА при обработке апдейта: {e}")
+            import traceback
+            traceback.print_exc()
+            print("=" * 50 + "\n")
         return "ok", 200
     else:
         return "Bot is alive!", 200
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok", "bot": "running"}, 200
+    return {"status": "ok", "bot": "running", "version": "2026-02-07-diagnostic"}, 200
 
-# ------------------- Main (ИСПРАВЛЕНО: единый блок) -------------------
+# ------------------- Main -------------------
 async def on_startup():
     """Установка вебхука при запуске"""
     webhook_url = "https://coffee-telegram-bot-1-tf7w.onrender.com/"
-    await bot.set_webhook(webhook_url)
-    print(f"Вебхук установлен на: {webhook_url}")
+    print(f"\n⏳ Устанавливаю вебхук на: {webhook_url}")
+    try:
+        await bot.set_webhook(webhook_url)
+        print("✅ Вебхук успешно установлен")
+    except Exception as e:
+        print(f"❌ Ошибка при установке вебхука: {e}")
 
 if __name__ == "__main__":
     # Устанавливаем вебхук при запуске
     asyncio.run(on_startup())
     
-    print("=== Запуск Flask приложения ===")
+    print("\n=== Запуск Flask приложения ===")
     
     # Инициализируем базу данных
     init_db()
