@@ -22,25 +22,25 @@ machines = {
     "GRUSHA": "ГРУША",
 }
 
-# ------------------- Кнопки -------------------
+# ------------------- Кнопки (ИСПРАВЛЕНО для aiogram 3.x) -------------------
 menu_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton("☕ Оценить кофе", callback_data="rate_coffee")],
-    [InlineKeyboardButton("⭐ Оценить сервис", callback_data="rate_service")],
-    [InlineKeyboardButton("✍️ Оставить отзыв", callback_data="leave_review")],
-    [InlineKeyboardButton("🛠 Техническая проблема", callback_data="tech_issue")]
+    [InlineKeyboardButton(text="☕ Оценить кофе", callback_data="rate_coffee")],
+    [InlineKeyboardButton(text="⭐ Оценить сервис", callback_data="rate_service")],
+    [InlineKeyboardButton(text="✍️ Оставить отзыв", callback_data="leave_review")],
+    [InlineKeyboardButton(text="🛠 Техническая проблема", callback_data="tech_issue")]
 ])
 
 def rating_kb(prefix):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(str(i), callback_data=f"{prefix}_{i}") for i in range(1, 6)]
+        [InlineKeyboardButton(text=str(i), callback_data=f"{prefix}_{i}") for i in range(1, 6)]
     ])
 
 issue_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton("Закончилось вода", callback_data="issue_water")],
-    [InlineKeyboardButton("Не отдал сдачу", callback_data="issue_change")],
-    [InlineKeyboardButton("Не приготовил кофе", callback_data="issue_no_coffee")],
-    [InlineKeyboardButton("Емкость с отходами переполнена", callback_data="issue_trash")],
-    [InlineKeyboardButton("Другая проблема", callback_data="issue_other")]
+    [InlineKeyboardButton(text="Закончилось вода", callback_data="issue_water")],
+    [InlineKeyboardButton(text="Не отдал сдачу", callback_data="issue_change")],
+    [InlineKeyboardButton(text="Не приготовил кофе", callback_data="issue_no_coffee")],
+    [InlineKeyboardButton(text="Емкость с отходами переполнена", callback_data="issue_trash")],
+    [InlineKeyboardButton(text="Другая проблема", callback_data="issue_other")]
 ])
 
 # ------------------- SQLite -------------------
@@ -83,7 +83,7 @@ async def start_handler(message: types.Message):
     user_machine[message.from_user.id] = machine_code
     await message.answer(f"Привет! Вы подключились к машине {machine_name}", reply_markup=menu_kb)
 
-async def callback_handler(callback: types.CallbackQuery):
+async def callback_handler(callback: types.CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
     machine_code = user_machine.get(user_id, "unknown")
     machine_name = machines.get(machine_code, machine_code)
@@ -123,11 +123,12 @@ async def callback_handler(callback: types.CallbackQuery):
         else:
             save_record(user_id, machine_code, "issue", issue_type)
             await callback.message.answer(f"Спасибо! Проблема '{issue_type}' сохранена ✅", reply_markup=menu_kb)
+            # Отправляем уведомление владельцу
             await bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{issue_type}")
 
     await callback.answer()
 
-async def message_handler(message: types.Message):
+async def message_handler(message: types.Message, bot: Bot):
     user_id = message.from_user.id
 
     if user_id in user_last_action:
@@ -140,6 +141,7 @@ async def message_handler(message: types.Message):
         elif type_ == "issue" and user_id in user_pending_issue:
             save_record(user_id, machine_code, "issue", message.text)
             await message.answer("Спасибо! Проблема сохранена ✅", reply_markup=menu_kb)
+            # Отправляем уведомление владельцу
             await bot.send_message(OWNER_ID, f"Проблема с машиной {machine_name} от пользователя {user_id}:\n{message.text}")
             user_pending_issue.pop(user_id, None)
 
@@ -147,7 +149,7 @@ async def message_handler(message: types.Message):
     else:
         await message.answer("Нажмите кнопку меню, чтобы выбрать действие.")
 
-# ------------------- Bot и Dispatcher -------------------
+# ------------------- Bot и Dispatcher (ИСПРАВЛЕНО для aiogram 3.x) -------------------
 bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
@@ -164,7 +166,7 @@ def webhook():
     if request.method == "POST":
         try:
             update = types.Update(**request.get_json())
-            # Обрабатываем обновление
+            # Обрабатываем обновление (ИСПРАВЛЕНО для aiogram 3.x)
             asyncio.run(dp.feed_webhook_update(bot, update))
         except Exception as e:
             print(f"Ошибка при обработке апдейта: {e}")
@@ -179,4 +181,4 @@ if __name__ == "__main__":
     
     # Запускаем Flask
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
