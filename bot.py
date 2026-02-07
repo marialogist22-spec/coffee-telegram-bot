@@ -2,6 +2,8 @@ import os
 import sys
 import asyncio
 import sqlite3
+import csv
+import io
 from datetime import datetime
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
@@ -11,7 +13,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
 print("=" * 50)
-print("ВЕРСИЯ КОДА: 2026-02-07 с командой /export")
+print("ВЕРСИЯ КОДА: 2026-02-07 с улучшенным экспортом и веб-интерфейсом")
 print("=" * 50)
 
 print("=== Начало запуска бота ===")
@@ -20,6 +22,8 @@ print("=== Начало запуска бота ===")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 OWNER_ID = 5534388849
 DB_PATH = "bot_data.db"
+# Установите свой пароль для админки (замените на сложный пароль)
+ADMIN_PASSWORD = "coffegrusha123"
 
 print(f"TOKEN exists: {bool(TOKEN)}")
 print(f"OWNER_ID: {OWNER_ID}")
@@ -197,9 +201,9 @@ async def message_handler(message: types.Message, bot: Bot):
         import traceback
         traceback.print_exc()
 
-# ------------------- НОВАЯ ФУНКЦИЯ: Экспорт базы данных -------------------
+# ------------------- УЛУЧШЕННАЯ ФУНКЦИЯ: Экспорт базы данных -------------------
 async def export_database_handler(message: types.Message):
-    """Обработчик команды /export для отправки бэкапа базы данных"""
+    """Обработчик команды /export для отправки бэкапов базы данных"""
     print(f"\n=== ПОЛУЧЕНА КОМАНДА /export ОТ {message.from_user.id} ===")
     
     # Проверяем, что команду отправляет владелец бота
@@ -209,36 +213,70 @@ async def export_database_handler(message: types.Message):
         return
     
     try:
-        # Проверяем существование файла базы данных
+        # 1. Отправляем оригинальный файл базы данных SQLite
         if not os.path.exists(DB_PATH):
             print(f"❌ Файл базы данных не найден: {DB_PATH}")
             await message.answer("❌ Файл базы данных не найден.")
             return
         
-        # Получаем размер файла
         file_size = os.path.getsize(DB_PATH)
         print(f"Размер файла базы данных: {file_size} байт")
         
-        # Создаем объект файла для отправки
         document = FSInputFile(DB_PATH)
-        
         print(f"Отправляю файл базы данных пользователю {message.from_user.id}...")
         
-        # Отправляем файл
         await message.answer_document(
             document=document,
-            caption=f"📋 Бэкап базы данных\n"
+            caption=f"📁 Оригинальная база данных SQLite\n"
                    f"Дата: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                    f"Размер: {file_size} байт"
         )
+        print("✅ SQLite файл успешно отправлен!")
         
-        print("✅ Файл базы данных успешно отправлен!")
-        
+        # 2. Создаем и отправляем CSV-файл
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM records ORDER BY timestamp DESC")
+        records = cursor.fetchall()
+        conn.close()
+
+        if records:
+            # Создаем CSV в памяти
+            output = io.StringIO()
+            csv_writer = csv.writer(output)
+            
+            # Заголовки столбцов
+            csv_writer.writerow(['ID', 'User ID', 'Machine', 'Type', 'Value', 'Timestamp'])
+            # Данные
+            csv_writer.writerows(records)
+            
+            # Преобразуем в байты и отправляем как файл
+            csv_data = io.BytesIO(output.getvalue().encode('utf-8'))
+            csv_file = types.BufferedInputFile(csv_data.getvalue(), filename="bot_data.csv")
+            
+            await message.answer_document(
+                document=csv_file,
+                caption="📊 Данные в формате CSV (открывается в Excel/Google Sheets)"
+            )
+            print("✅ CSV-файл успешно создан и отправлен!")
+            
+            # 3. Отправляем краткую статистику
+            stats_message = (
+                f"📈 Статистика данных:\n"
+                f"• Всего записей: {len(records)}\n"
+                f"• Последняя запись: {records[0][5] if len(records[0]) > 5 else 'N/A'}\n"
+                f"• Файл CSV содержит {len(records)} строк"
+            )
+            await message.answer(stats_message)
+            
+        else:
+            await message.answer("📭 База данных пуста. Нет данных для экспорта.")
+
     except Exception as e:
         print(f"❌ ERROR в export_database_handler: {e}")
         import traceback
         traceback.print_exc()
-        await message.answer(f"❌ Ошибка при отправке базы данных: {str(e)}")
+        await message.answer(f"❌ Ошибка при экспорте данных: {str(e)}")
 
 # ------------------- Bot и Dispatcher -------------------
 print("Инициализация бота и диспетчера...")
@@ -251,7 +289,7 @@ try:
     
     # Регистрируем все обработчики
     dp.message.register(start_handler, Command("start"))
-    dp.message.register(export_database_handler, Command("export"))  # НОВЫЙ ОБРАБОТЧИК
+    dp.message.register(export_database_handler, Command("export"))
     dp.callback_query.register(callback_handler)
     dp.message.register(message_handler)
     
@@ -310,7 +348,176 @@ def webhook():
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok", "bot": "running", "version": "2026-02-07-with-export"}, 200
+    return {"status": "ok", "bot": "running", "version": "2026-02-07-with-export-and-webview"}, 200
+
+@app.route("/admin/<password>", methods=["GET"])
+def admin_view(password):
+    """Секретная страница для просмотра данных в браузере"""
+    if password != ADMIN_PASSWORD:
+        return """
+        <html>
+        <head><title>Доступ запрещен</title><meta charset="utf-8"></head>
+        <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+            <h1>❌ Доступ запрещен</h1>
+            <p>Неверный пароль или страница не существует.</p>
+        </body>
+        </html>
+        """, 403
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Получаем общую статистику
+        cursor.execute("SELECT COUNT(*) FROM records")
+        total_count = cursor.fetchone()[0]
+        
+        cursor.execute("""
+            SELECT 
+                id, user_id, machine_id, type, value,
+                datetime(timestamp, 'localtime') as local_time
+            FROM records 
+            ORDER BY timestamp DESC
+            LIMIT 200
+        """)
+        records = cursor.fetchall()
+        conn.close()
+        
+        # Создаем HTML-таблицу
+        html = """
+        <html>
+        <head>
+            <title>📊 Данные бота кофемашин</title>
+            <meta charset="utf-8">
+            <style>
+                body { 
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                    margin: 20px; 
+                    background-color: #f5f5f5;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+                h1 { 
+                    color: #333; 
+                    border-bottom: 2px solid #4CAF50;
+                    padding-bottom: 10px;
+                }
+                .stats {
+                    background: #e8f5e9;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                }
+                table { 
+                    border-collapse: collapse; 
+                    width: 100%; 
+                    margin-top: 20px;
+                }
+                th, td { 
+                    border: 1px solid #ddd; 
+                    padding: 10px; 
+                    text-align: left; 
+                }
+                th { 
+                    background-color: #4CAF50; 
+                    color: white; 
+                    position: sticky;
+                    top: 0;
+                }
+                tr:nth-child(even) { background-color: #f9f9f9; }
+                tr:hover { background-color: #f1f1f1; }
+                .type-coffee { color: #8B4513; }
+                .type-service { color: #1E90FF; }
+                .type-review { color: #FF8C00; }
+                .type-issue { color: #DC143C; }
+                .footer {
+                    margin-top: 20px;
+                    text-align: center;
+                    color: #666;
+                    font-size: 0.9em;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>📊 Данные бота кофемашин</h1>
+                
+                <div class="stats">
+                    <p><strong>📈 Статистика:</strong></p>
+                    <p>• Всего записей в базе: <b>{total_count}</b></p>
+                    <p>• Показано на странице: <b>{shown_count}</b> (последние записи)</p>
+                    <p>• Последнее обновление: <b>{current_time}</b></p>
+                    <p>• Для полного экспорта используйте команду <code>/export</code> в Telegram</p>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>User ID</th>
+                            <th>Машина</th>
+                            <th>Тип</th>
+                            <th>Значение/Текст</th>
+                            <th>Время (местное)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """.format(
+            total_count=total_count,
+            shown_count=len(records),
+            current_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+        
+        type_classes = {
+            'coffee': 'type-coffee',
+            'service': 'type-service', 
+            'review': 'type-review',
+            'issue': 'type-issue'
+        }
+        
+        for row in records:
+            type_class = type_classes.get(row[3], '')
+            html += f"""
+                        <tr>
+                            <td>{row[0]}</td>
+                            <td>{row[1]}</td>
+                            <td>{row[2]}</td>
+                            <td class="{type_class}">{row[3]}</td>
+                            <td>{row[4]}</td>
+                            <td>{row[5]}</td>
+                        </tr>
+            """
+        
+        html += """
+                    </tbody>
+                </table>
+                
+                <div class="footer">
+                    <p>Бот кофемашин | Версия с веб-интерфейсом | Автоматическое обновление при новом запросе</p>
+                    <p>Ссылка для доступа: https://coffee-telegram-bot-1-tf7w.onrender.com/admin/<b>ВАШ_ПАРОЛЬ</b></p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html
+        
+    except Exception as e:
+        return f"""
+        <html>
+        <head><title>Ошибка</title><meta charset="utf-8"></head>
+        <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+            <h1>❌ Ошибка при загрузке данных</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """, 500
 
 # ------------------- Main -------------------
 async def on_startup():
@@ -341,12 +548,15 @@ if __name__ == "__main__":
     try:
         app.run(host="0.0.0.0", port=port, debug=False)
         print("Flask приложение запущено")
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("✅ Бот запущен и готов к работе!")
-        print(f"Доступные команды:")
-        print(f"  /start - начать работу с ботом")
-        print(f"  /export - получить бэкап базы данных (только для владельца)")
-        print("=" * 50)
+        print(f"Доступные команды в Telegram:")
+        print(f"  /start   - начать работу с ботом")
+        print(f"  /export  - получить бэкап базы данных (только для владельца)")
+        print(f"\n🌐 Веб-интерфейс для просмотра данных:")
+        print(f"  https://coffee-telegram-bot-1-tf7w.onrender.com/admin/{ADMIN_PASSWORD}")
+        print(f"\n⚠️  НЕ ЗАБУДЬТЕ поменять пароль ADMIN_PASSWORD в коде!")
+        print("=" * 60)
     except Exception as e:
         print(f"ERROR при запуске Flask: {e}")
         sys.exit(1)
